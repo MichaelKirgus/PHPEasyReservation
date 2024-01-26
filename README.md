@@ -40,10 +40,14 @@ If you put images in the corresponding folder, its possible to select the image 
 The setting only contains the image filename itself, not the absolute path.
 
 ## Used SQL tables
-settings        All settings for the application<br>
-translations    All transaltions<br>
-reservations    All user generated reservations with all important information<br>
-approvements    Tracking for user validation (mail validation and administrator approvement steps)
+**settings**<br>
+All settings for the application<br><br>
+**translations**
+All transaltions<br><br>
+**reservations**<br>
+All user generated reservations with all important information<br><br>
+**approvements**<br>
+Tracking for user validation (mail validation and administrator approvement steps)
 
 ## Reverse Proxy configuration
 There is no general special configuration needed for using this application with an reverse proxy.<br>
