@@ -1,0 +1,1 @@
+But your images or icons for custom favicons in this directory.
