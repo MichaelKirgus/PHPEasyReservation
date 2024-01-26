@@ -42,7 +42,7 @@ The setting only contains the image filename itself, not the absolute path.
 ## Used SQL tables
 **settings**<br>
 All settings for the application<br><br>
-**translations**
+**translations**<br>
 All transaltions<br><br>
 **reservations**<br>
 All user generated reservations with all important information<br><br>
