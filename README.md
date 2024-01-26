@@ -65,7 +65,7 @@ You can set the moderator key via the settings menu oder via the setting "modera
 For example, an valid moderator URL would be (https://reservation.example.com/?moderatorpw=mymoderatortoken).
 
 **The administrator key is set default to "secure_adminkey", and SHOULD BE CHANGED via settings menu or the setting "admin_presharedkey" in the database.**<br>
-**All users that known the administrator key can chnage all settings, delete reservations and also change the keys itself!**
+**All users that known the administrator key can change all settings, delete reservations and also change the keys itself!**
 
 ## Translations
 Currently this project has only translations for English and German.<br>
