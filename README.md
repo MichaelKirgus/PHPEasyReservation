@@ -9,7 +9,7 @@ By default there is no need for javascript or other external resources (except P
 ## Installation
 You need an MySQL-Instance with version 8.0 or higher and an web server with PHP version 8.0 or higher.<br>
 Even it is possible to use the application via HTTP, it is not recommended. Please use an valid SSL certificate and enable or better force to HTTPS.<br>
-Import the both files "settings_with_schema.sql" and "translations_with_schema.sql" into the database.<br>
+Import the files from folder "sql" into the database.<br>
 Create an new user and grant that user the permission for the database.<br>
 **Do NOT use the root mysql user!!!**<br>
 Copy the "index.php" and the folders "assets" and "phpmailer" (with files and sub-directories) to the root-directory in your webserver.<br>
