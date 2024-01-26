@@ -68,7 +68,7 @@ For example, an valid moderator URL would be (https://reservation.example.com/?m
 **All users that known the administrator key can chnage all settings, delete reservations and also change the keys itself!**
 
 ## Translations
-Currently this project has only translations for english and german.<br>
+Currently this project has only translations for English and German.<br>
 The used translation depends on the users browser prefered language setting.<br>
 The priority of the used translation can be changed here:
 ```
