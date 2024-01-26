@@ -17,7 +17,7 @@ Edit the following lines in "index.php":
 
 ```
 $http_schema = "https"; (only edit, if you want to use http instead of https)
-$base_url = "Your base URL, for example https://reservation.myexamplesite.net/";
+$base_url = "Your base URL, for example https://reservation.example.com/";
 ```
 
 ```
@@ -28,7 +28,7 @@ $dbpass = 'Database password';                  // Datebase password
 ```
 
 Now you should be able to open the site via the URL:<br>
-(https://reservation.myexamplesite.net/?adminpw=secure_adminkey)<br>
+(https://reservation.example.com/?adminpw=secure_adminkey)<br>
 At the bottom of the page it is now possible to open the settings menu and change all settings.<br>
 At default settings you need to put the background picture, top picture and favicon in the corresponding folders:
 
@@ -59,10 +59,10 @@ Please make sure that the used reverse proxy apply this header to the request.
 
 ## Usage
 The "normal" user can access the site via an access token, which can be set via the settings menu or via the setting "reservation_token".<br>
-For example, an valid user registration URL would be (https://reservation.myexamplesite.net/?t=myverysecrettoken).<br>
+For example, an valid user registration URL would be (https://reservation.example.com/?t=myverysecrettoken).<br>
 There is also an option for setting an moderator key, which can delete reservations an view some more informations.<br>
 You can set the moderator key via the settings menu oder via the setting "moderator_presharedkey".<br>
-For example, an valid moderator URL would be (https://reservation.myexamplesite.net/?moderatorpw=mymoderatortoken).
+For example, an valid moderator URL would be (https://reservation.example.com/?moderatorpw=mymoderatortoken).
 
 **The administrator key is set default to "secure_adminkey", and SHOULD BE CHANGED via settings menu or the setting "admin_presharedkey" in the database.**<br>
 **All users that known the administrator key can chnage all settings, delete reservations and also change the keys itself!**
