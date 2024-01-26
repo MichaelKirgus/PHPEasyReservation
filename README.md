@@ -18,7 +18,9 @@ Edit the following lines in "index.php":
 ```
 $http_schema = "https"; (only edit, if you want to use http instead of https)
 $base_url = "Your base URL, for example https://reservation.myexamplesite.net/";
+```
 
+```
 $dbhost = 'Database host or IP';                // Hostname of database
 $dbname = 'events';                             // Database name
 $dbuser = 'Database user';                      // Database username
