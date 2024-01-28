@@ -677,6 +677,7 @@
                         // Only check if name is at least one char.
                         if ($adminmode_enabled == 1 && !$name_dbsafe = '') {
                             $isvalidname = 1;
+                            $name_dbsafe = filter_string_dbsafe($name);
                         }
                         // Allow no valid mail if admin-mode is enabled (bypass)
                         if ($adminmode_enabled == 1) {
