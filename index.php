@@ -2351,7 +2351,7 @@
             if (getvaluefromsettings($settings_array, 'reservation_show_project_credits') == 1){
                 echo '<div class="appinfo-div">';
                 echo getstrfromtranslation($lang_array, 'bottom_project_disclaimer');
-                echo '<br><a href="https://github.com/MichaelKirgus/PHPEasyReservation" target="_blank">';
+                echo '<br><a href="https://github.com/MichaelKirgus/EasyReservation-ng" target="_blank">';
                 echo getstrfromtranslation($lang_array, 'bottom_project_link');
                 echo '</a><br>' . $app_version . '</div>';
             }
