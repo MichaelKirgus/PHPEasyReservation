@@ -22,6 +22,5 @@ COPY composer.json /var/www/composer.json
 COPY composer.lock /var/www/composer.lock
 COPY --from=vendor /app/vendor /var/www/vendor
 
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 EXPOSE 9000
 CMD ["php-fpm"]
