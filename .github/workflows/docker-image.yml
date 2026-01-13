@@ -12,14 +12,14 @@ jobs:
         with:
           ref: refactor-to-backend-frontend
       - name: Set image name for backend
-        id: vars.backend
+        id: vars-backend
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           IMAGE_NAME_BACKEND=ghcr.io/$OWNER/$REPO/backend:latest
           echo "image_name=$IMAGE_NAME_BACKEND" >> $GITHUB_OUTPUT
       - name: Set image name for frontend
-        id: vars.frontend
+        id: vars-frontend
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
@@ -32,10 +32,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.IMAGE_PUSH_TOKEN }}
       - name: Build Docker image for backend
-        run: docker build -t ${{ steps.vars.backend.outputs.image_name }} ./backend
+        run: docker build -t ${{ steps.vars-backend.outputs.image_name }} ./backend
       - name: Build Docker image for frontend
-        run: docker build -t ${{ steps.vars.frontend.outputs.image_name }} ./frontend
+        run: docker build -t ${{ steps.vars-frontend.outputs.image_name }} ./frontend
       - name: Push Docker image for backend
-        run: docker push ${{ steps.vars.backend.outputs.image_name }}
+        run: docker push ${{ steps.vars-backend.outputs.image_name }}
       - name: Push Docker image for frontend
-        run: docker push ${{ steps.vars.frontend.outputs.image_name }}
+        run: docker push ${{ steps.vars-frontend.outputs.image_name }}
