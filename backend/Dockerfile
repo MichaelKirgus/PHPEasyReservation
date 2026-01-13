@@ -11,7 +11,7 @@ WORKDIR /var/www
 COPY app /var/www/app
 COPY artisan /var/www/artisan
 COPY package.json /var/www/package.json
-COPY vue.config.js /var/www/vue.config.js
+COPY vite.config.js /var/www/vite.config.js
 COPY bootstrap /var/www/bootstrap
 COPY config /var/www/config
 COPY database /var/www/database
