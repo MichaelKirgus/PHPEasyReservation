@@ -1,15 +1,24 @@
 FROM composer:2.6 AS vendor
 WORKDIR /app
-COPY . .
-RUN composer install --no-dev --prefer-dist --optimize-autoloader --ignore-platform-reqs
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --prefer-dist --optimize-autoloader
 FROM php:8.3-fpm
 RUN apt-get update && apt-get install -y \
     git unzip libpng-dev libonig-dev libxml2-dev zip curl \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
 
 WORKDIR /var/www
-COPY . /var/www/
+COPY app /var/www/app
+COPY bootstrap /var/www/bootstrap
+COPY config /var/www/config
+COPY database /var/www/database
+COPY public /var/www/public
+COPY resources /var/www/resources
+COPY routes /var/www/routes
+COPY composer.json /var/www/composer.json
+COPY composer.lock /var/www/composer.lock
 COPY --from=vendor /app/vendor /var/www/vendor
+
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 EXPOSE 9000
 CMD ["php-fpm"]
