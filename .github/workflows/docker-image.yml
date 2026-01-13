@@ -10,4 +10,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: docker build . --file /backend/Dockerfile --tag phpeasyreservation-backend:$(date +%s)
+      run: |
+          cd backend 
+          docker build . --tag phpeasyreservation-backend:$(date +%s)
