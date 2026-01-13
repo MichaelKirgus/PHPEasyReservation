@@ -1,6 +1,6 @@
 FROM composer:2.6 AS vendor
 WORKDIR /app
-COPY composer.json composer.lock ./
+COPY . .
 RUN composer install --no-dev --prefer-dist --optimize-autoloader
 FROM php:8.3-fpm
 RUN apt-get update && apt-get install -y \
