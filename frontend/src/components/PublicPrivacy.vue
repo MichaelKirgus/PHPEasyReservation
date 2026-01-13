@@ -1,0 +1,120 @@
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
+const props = defineProps({ langCode: { type: String, default: 'de' } })
+
+const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+const siteToken = ref(localStorage.getItem('site_token') || '')
+const publicApiKey = ref(localStorage.getItem('public_api_key') || '')
+const lang = ref(props.langCode || (navigator.language || 'en').split('-')[0])
+const t = ref({})
+const privacy = ref('')
+const enabled = ref(false)
+const loading = ref(false)
+const error = ref('')
+
+marked.setOptions({ gfm: true, breaks: true })
+
+function headers() {
+  const h = { Accept: 'application/json' }
+  if (siteToken.value) h['X-Site-Token'] = siteToken.value
+  const adminKey = localStorage.getItem('admin_api_key') || ''
+  const apiKey = adminKey || publicApiKey.value
+  if (apiKey) h['X-Api-Key'] = apiKey
+  return h
+}
+
+async function fetchJson(url, opts = {}) {
+  const res = await fetch(url, { ...opts })
+  const text = await res.text()
+  if (!res.ok) {
+    const snippet = text ? ` ${text.slice(0, 120)}` : ''
+    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet}`)
+  }
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const snippet = text ? ` (${contentType}): ${text.slice(0, 120)}` : ` (${contentType})`
+    throw new Error(`Unerwartetes Format${snippet}`)
+  }
+  return text ? JSON.parse(text) : null
+}
+
+async function fetchTranslations() {
+  try {
+    t.value = await fetchJson(`${apiBase}/translations/${lang.value}`, { headers: headers() })
+  } catch (_) {
+    t.value = {}
+  }
+}
+
+function tr(key, fallback = '') {
+  return t.value[key] || fallback || key
+}
+
+function render(text) {
+  const html = marked.parse(String(text || ''))
+  return DOMPurify.sanitize(html)
+}
+
+async function loadPrivacy() {
+  loading.value = true
+  try {
+    const data = await fetchJson(`${apiBase}/privacy-policy`, { headers: headers() })
+    privacy.value = data.text || ''
+    enabled.value = true
+    error.value = ''
+  } catch (e) {
+    privacy.value = ''
+    enabled.value = false
+    error.value = `Datenschutzerklärung konnte nicht geladen werden: ${e.message || e}`
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  await fetchTranslations()
+  await loadPrivacy()
+})
+
+watch(() => props.langCode, async (val) => {
+  if (val && val !== lang.value) {
+    lang.value = val
+    await fetchTranslations()
+  }
+})
+
+function goBack() {
+  window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'public' }))
+}
+</script>
+
+<template>
+  <div class="privacy-page">
+    <div class="top-row">
+      <h2>{{ tr('privacy_title', 'Datenschutzerklärung') }}</h2>
+      <button class="ghost" type="button" @click="goBack">? Zurück</button>
+    </div>
+    <p class="hint">{{ tr('privacy_intro', 'Informationen zum Datenschutz.') }}</p>
+
+    <div v-if="loading">Datenschutzerklärung wird geladen...</div>
+    <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="!enabled">{{ tr('privacy_disabled', 'Keine Datenschutzerklärung verfügbar.') }}</div>
+    <div v-else class="privacy-content">
+      <div v-html="render(privacy)"></div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.privacy-page { display: flex; flex-direction: column; gap: 0.5rem; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+h2 { margin: 0; }
+.hint { color: #6b7280; }
+.error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; padding: 0.5rem; border-radius: 6px; }
+.privacy-content { display: flex; flex-direction: column; gap: 0.5rem; }
+div[v-html] { color: #0f172a; }
+button.ghost { background: #eef2ff; color: #1d4ed8; border: 1px solid #c7d2fe; padding: 0.35rem 0.6rem; border-radius: 6px; cursor: pointer; }
+</style>

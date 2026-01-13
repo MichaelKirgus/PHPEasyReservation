@@ -1,0 +1,36 @@
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: var(--app-bg, #f5f7fb);
+  background-size: var(--app-bg-size, cover);
+  background-position: var(--app-bg-position, center);
+  background-repeat: var(--app-bg-repeat, no-repeat);
+  background-attachment: var(--app-bg-attachment, fixed);
+  --app-card-bg: rgba(255, 255, 255, 0.9);
+}
+
+#app {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrapper table {
+  min-width: 720px;
+}
+
+@media (max-width: 640px) {
+  .table-wrapper table {
+    min-width: 560px;
+  }
+}

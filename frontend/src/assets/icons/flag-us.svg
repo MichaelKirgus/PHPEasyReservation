@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Source: https://api.iconify.design/flag:us-4x3.svg -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 7410 3900">
+  <path fill="#b22234" d="M0 0h7410v3900H0z"/>
+  <path fill="#fff" d="M0 450h7410v300H0zM0 1050h7410v300H0zM0 1650h7410v300H0zM0 2250h7410v300H0zM0 2850h7410v300H0zM0 3450h7410v300H0z"/>
+  <path fill="#3c3b6e" d="M0 0h2964v2100H0z"/>
+  <g fill="#fff">
+    <g id="s18">
+      <g id="s9">
+        <g id="s5">
+          <g id="s4">
+            <path id="s" d="m247 90 70.534 217.082h228.352L360.176 336.836 430.71 553.918 247 431.836 63.29 553.918 133.824 336.836 0 307.082h228.352z"/>
+            <use xlink:href="#s" y="420"/>
+            <use xlink:href="#s" y="840"/>
+            <use xlink:href="#s" y="1260"/>
+          </g>
+          <use xlink:href="#s" y="1680"/>
+        </g>
+        <use xlink:href="#s4" x="247" y="210" />
+      </g>
+      <use xlink:href="#s9" x="494" />
+    </g>
+    <use xlink:href="#s18" x="988" />
+    <use xlink:href="#s18" x="1976" />
+    <use xlink:href="#s9" x="2964" />
+  </g>
+</svg>

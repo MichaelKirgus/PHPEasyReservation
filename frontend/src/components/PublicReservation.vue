@@ -1,0 +1,644 @@
+<script setup>
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+
+const props = defineProps({ langCode: { type: String, default: 'de' } })
+
+const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+const mediaBase = import.meta.env.VITE_MEDIA_BASE || (() => {
+  if (apiBase.startsWith('http')) return new URL(apiBase).origin
+  return window.location.origin
+})()
+
+const siteToken = ref(localStorage.getItem('site_token') || '')
+const publicApiKey = ref(localStorage.getItem('public_api_key') || '')
+const lang = ref(props.langCode || (navigator.language || 'en').split('-')[0])
+const t = ref({})
+const loading = ref(false)
+const message = ref('')
+const error = ref('')
+const config = reactive({ settings: {}, form_fields: [], attendees: [], waitlist: [], stats: { count: 0, max: 0 } })
+const currentUser = ref(null)
+
+const form = reactive({ name: '', email: '', payload: {} })
+
+const reservationEnabled = computed(() => Number(config.settings?.reservation_enabled || 0) === 1)
+const undoEnabled = computed(() => Number(config.settings?.reservation_undo_enabled || 0) === 1)
+const showAttendees = computed(() => Number(config.settings?.reservation_show_attendees_enabled || 0) === 1)
+const showLimit = computed(() => Number(config.settings?.reservation_show_reservation_limit_enabled || 0) === 1)
+const waitlistEnabled = computed(() => Number(config.settings?.waitlist_enabled || 0) === 1)
+const showNextEvent = computed(() => Number(config.settings?.reservation_show_next_event || 0) === 1)
+const nextEventText = computed(() => config.settings?.reservation_next_event || '')
+const upcomingEvents = computed(() => Array.isArray(config.settings?.reservation_upcoming_events_array) ? config.settings.reservation_upcoming_events_array : [])
+const upcomingEventsList = computed(() => config.settings?.reservation_upcoming_events_list || '')
+const slotsFull = computed(() => {
+  const max = Number(config.stats?.max || 0)
+  const count = Number(config.stats?.count || 0)
+  return max > 0 && count >= max
+})
+const submitLabel = computed(() => {
+  if (slotsFull.value && waitlistEnabled.value) {
+    return config.settings.waitlist_join_button_text || tr('waitlist_join_button_text', 'Auf Warteliste setzen')
+  }
+  return tr('button_submit_reservation', 'Reservieren')
+})
+const waitlistFullText = computed(() => {
+  if (slotsFull.value && waitlistEnabled.value) {
+    return config.settings.waitlist_full_text || tr('waitlist_full_text', 'Aktuell ausgebucht. Trage dich in die Warteliste ein.')
+  }
+  if (slotsFull.value && !waitlistEnabled.value) {
+    return config.settings.waitlist_disabled_text || tr('waitlist_disabled_text', 'Ausgebucht. Warteliste ist deaktiviert.')
+  }
+  return ''
+})
+
+const publicFields = computed(() => {
+  const mapped = (config.form_fields || []).filter(f => f && f.visible_public).map(f => ({ ...f }))
+  mapped.sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  return mapped
+})
+
+marked.setOptions({ gfm: true, breaks: true })
+
+function renderMarkdown(raw) {
+  if (!raw) return ''
+  const html = marked.parse(String(raw))
+  return DOMPurify.sanitize(html)
+}
+
+const renderedAdditionalInfo = computed(() => renderMarkdown(config.settings?.reservation_additional_info || ''))
+const renderedDetails = computed(() => renderMarkdown(config.settings?.reservation_details || ''))
+const detailsSummaryLabel = computed(() => config.settings?.reservation_details_summary_label || tr('summary_text', 'Details'))
+const headerAlign = computed(() => config.settings?.reservation_header_align || 'left')
+const topImageStyle = computed(() => {
+  const maxWidth = config.settings?.reservation_top_image_max_width || '100%'
+  const maxHeight = config.settings?.reservation_top_image_max_height || '240px'
+  return { maxWidth, maxHeight, objectFit: 'contain', width: '100%', height: 'auto' }
+})
+const renderFieldLabel = (field) => renderMarkdown(field.label || field.key)
+const renderFieldHelp = (field) => renderMarkdown(field.help_text || '')
+function setMessage(msg) { message.value = msg; error.value = '' }
+function setError(msg) { error.value = msg; message.value = '' }
+
+function headers(withJson = false) {
+  const h = { Accept: 'application/json' }
+  if (siteToken.value) h['X-Site-Token'] = siteToken.value
+  const adminKey = localStorage.getItem('admin_api_key') || ''
+  const apiKey = adminKey || publicApiKey.value
+  if (apiKey) h['X-Api-Key'] = apiKey
+  if (withJson) h['Content-Type'] = 'application/json'
+  return h
+}
+
+async function fetchJson(url, opts = {}) {
+  const res = await fetch(url, { ...opts })
+  const contentType = res.headers.get('content-type') || ''
+  const text = await res.text()
+  if (!res.ok) {
+    const snippet = text ? ` ${text.slice(0, 200)}` : ''
+    throw new Error(`HTTP ${res.status} ${res.statusText}${snippet}`)
+  }
+  if (!contentType.includes('application/json')) {
+    const snippet = text ? ` (${contentType}): ${text.slice(0, 200)}` : ` (${contentType})`
+    throw new Error(`Unerwartetes Format${snippet}`)
+  }
+  return JSON.parse(text)
+}
+
+async function fetchTranslations() {
+  try {
+    t.value = await fetchJson(`${apiBase}/translations/${lang.value}`, { headers: headers() })
+  } catch (_) {
+    t.value = {}
+  }
+}
+
+function tr(key, fallback = '') {
+  return t.value[key] || fallback || key
+}
+
+async function loadConfig() {
+  loading.value = true
+  try {
+    const data = await fetchJson(`${apiBase}/public/config`, { headers: headers() })
+    Object.assign(config.settings, data.settings || {})
+    config.form_fields = data.form_fields || []
+    config.attendees = data.attendees || []
+    config.waitlist = data.waitlist_entries || []
+    config.stats = data.stats || { count: 0, max: 0 }
+    localStorage.setItem('site_token', siteToken.value || '')
+    updateFavicon(config.settings?.reservation_page_favicon)
+    updateTitle(config.settings?.reservation_page_title || config.settings?.reservation_name || 'Reservierung')
+    applyBackgroundImage()
+    console.debug('Konfiguration geladen.')
+  } catch (e) {
+    setError(`Laden fehlgeschlagen: ${e.message}`)
+  } finally {
+    loading.value = false
+  }
+}
+
+function updateFavicon(val) {
+  if (typeof document === 'undefined') return
+  const link = document.querySelector("link[rel*='icon']") || document.createElement('link')
+  link.rel = 'icon'
+  link.href = mediaUrl(val || '/favicon.ico')
+  if (!link.parentNode) document.head.appendChild(link)
+}
+
+function updateTitle(val) {
+  if (typeof document === 'undefined') return
+  document.title = val || 'Reservierung'
+}
+
+const backgroundStyle = computed(() => {
+  return { minHeight: '100vh' }
+})
+
+function applyBackgroundImage() {
+  if (typeof document === 'undefined') return
+  const img = config.settings?.reservation_page_background_image || ''
+  const opacity = Math.min(100, Math.max(0, Number(config.settings?.reservation_background_opacity ?? 60)))
+  const alpha = (100 - opacity) / 100
+  if (img) {
+    const url = mediaUrl(img)
+    const value = `linear-gradient(rgba(255,255,255,${alpha}), rgba(255,255,255,${alpha})), url('${url}')`
+    const root = document.body.style
+    root.setProperty('--app-bg', value)
+    root.setProperty('--app-bg-size', 'cover')
+    root.setProperty('--app-bg-position', 'center')
+    root.setProperty('--app-bg-repeat', 'no-repeat')
+    root.setProperty('--app-bg-attachment', 'fixed')
+  } else {
+    const root = document.body.style
+    root.removeProperty('--app-bg')
+    root.removeProperty('--app-bg-size')
+    root.removeProperty('--app-bg-position')
+    root.removeProperty('--app-bg-repeat')
+    root.removeProperty('--app-bg-attachment')
+  }
+
+  const cardOpacity = Math.min(100, Math.max(0, Number(config.settings?.reservation_card_opacity ?? 90))) / 100
+  document.body.style.setProperty('--app-card-bg', `rgba(255,255,255,${cardOpacity})`)
+}
+
+const cardStyle = computed(() => {
+  const opacity = Math.min(100, Math.max(0, Number(config.settings?.reservation_card_opacity ?? 90)))
+  const alpha = opacity / 100
+  return {
+    backgroundColor: `rgba(255,255,255,${alpha})`
+  }
+})
+
+function mediaUrl(val) {
+  if (!val) return ''
+  if (val.startsWith('http://') || val.startsWith('https://')) return val
+  return `${mediaBase}${val.startsWith('/') ? '' : '/'}${val}`
+}
+
+function validateRequiredFields() {
+  const missing = []
+  ;(publicFields.value || []).forEach(field => {
+    if (!field.required) return
+    const value = fieldValue(field)
+    if (field.type === 'checkbox') {
+      if (!value) missing.push(field.label || field.key)
+    } else if (value === undefined || value === null || String(value).trim() === '') {
+      missing.push(field.label || field.key)
+    }
+  })
+  return missing
+}
+
+async function submitReservation() {
+  const missingRequired = validateRequiredFields()
+  if (missingRequired.length) {
+    setError(`Bitte bestätigen: ${missingRequired.join(', ')}`)
+    return
+  }
+
+  loading.value = true
+  try {
+    const payload = { ...form.payload }
+    const res = await fetch(`${apiBase}/reservations`, {
+      method: 'POST',
+      headers: headers(true),
+      body: JSON.stringify({
+        name: form.name,
+        email: form.email,
+        payload,
+      }),
+    })
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch (_) { data = null }
+    if (!res.ok) {
+      const msg = data?.message || text || res.statusText
+      throw new Error(msg)
+    }
+
+    if (data?.validation_pending) {
+      if (data?.pending_admin) {
+        setMessage(tr('email_validation_pending_admin', 'Bestätigung wartet auf Admin-Freigabe.'))
+      } else {
+        setMessage(tr('email_validation_check_mail', 'Bitte bestätige deine E-Mail.'))
+      }
+    } else if (data?.waitlist) {
+      setMessage(config.settings.waitlist_success_text || tr('feedback_waitlist_success', 'Du stehst jetzt auf der Warteliste.'))
+    } else {
+      setMessage(tr('feedback_reservation_success', 'Reservierung erfolgreich.'))
+    }
+    form.name = ''
+    form.email = ''
+    form.payload = {}
+    await loadConfig()
+  } catch (e) {
+    setError(tr('reservation_failed_prefix', 'Reservierung fehlgeschlagen: ') + (e.message || e))
+  } finally {
+    loading.value = false
+  }
+}
+
+async function undoReservation() {
+  loading.value = true
+  try {
+    const res = await fetch(`${apiBase}/reservations/undo`, {
+      method: 'POST',
+      headers: headers(true),
+      body: JSON.stringify({
+        name: form.name,
+        email: form.email,
+      }),
+    })
+    const text = await res.text()
+    if (!res.ok) throw new Error(text)
+    setMessage(tr('feedback_reservation_undo_success', 'Reservierung entfernt.'))
+    form.name = ''
+    form.email = ''
+
+    form.payload = {}
+    await loadConfig()
+  } catch (e) {
+    setError(tr('reservation_undo_failed_prefix', 'Stornieren fehlgeschlagen: ') + (e.message || e))
+  } finally {
+    loading.value = false
+  }
+}
+
+function fieldValue(field) {
+  if (field.key === 'name') return form.name
+  if (field.key === 'email') return form.email
+  return form.payload[field.key]
+}
+
+function setFieldValue(field, value) {
+  if (field.key === 'name') {
+    form.name = value
+    return
+  }
+  if (field.key === 'email') {
+    form.email = value
+    return
+  }
+  form.payload[field.key] = value
+}
+
+function fieldInputComponent(field) {
+  switch (field.type) {
+    case 'select':
+      return 'select'
+    case 'textarea':
+      return 'textarea'
+    default:
+      return 'input'
+  }
+}
+
+const hideIdentityFields = computed(() => currentUser.value?.role === 'user')
+const modalMessageEnabled = computed(() => Number(config.settings?.reservation_message_modal_enabled || 0) === 1)
+const modalErrorEnabled = computed(() => Number(config.settings?.reservation_error_modal_enabled || 0) === 1)
+const attendeesAlign = computed(() => config.settings?.reservation_attendees_align || 'left')
+const waitlistPublicEnabled = computed(() => Number(config.settings?.waitlist_show_public || 0) === 1)
+const waitlistAlign = computed(() => config.settings?.waitlist_public_align || 'left')
+const waitlistEntries = computed(() => Array.isArray(config.waitlist) ? config.waitlist : [])
+
+async function verifyTokenIfPresent() {
+  const url = new URL(window.location.href)
+  const token = url.searchParams.get('v')
+  if (!token) return
+  try {
+    const res = await fetch(`${apiBase}/email-validations/${encodeURIComponent(token)}`, { headers: headers() })
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch (_) { data = null }
+    if (!res.ok) throw new Error(data?.message || text || res.statusText)
+
+    if (data?.pending_admin) {
+      setMessage(tr('email_validation_confirmed_pending_admin', 'E-Mail bestätigt. Wartet auf Freigabe durch Administrator.'))
+    } else if (data?.waitlist) {
+      setMessage(tr('email_validation_confirmed_waitlist', 'E-Mail bestätigt. Auf Warteliste eingetragen.'))
+    } else {
+      setMessage(tr('email_validation_confirmed_reservation', 'E-Mail bestätigt. Reservierung erstellt.'))
+    }
+    await loadConfig()
+  } catch (e) {
+    setError(tr('email_validation_failed', 'Validierung fehlgeschlagen: ') + (e.message || e))
+  } finally {
+    removeQueryParams(['v'])
+  }
+}
+
+async function handleUndoTokenIfPresent() {
+  const url = new URL(window.location.href)
+  const token = url.searchParams.get('u')
+  if (!token) return
+  try {
+    const res = await fetch(`${apiBase}/reservations/undo-token/${encodeURIComponent(token)}`, { headers: headers() })
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch (_) { data = null }
+    if (!res.ok) throw new Error(data?.message || text || res.statusText)
+    setMessage(tr('feedback_reservation_undo_success', 'Reservierung entfernt.'))
+    await loadConfig()
+  } catch (e) {
+    setError(tr('reservation_undo_failed_prefix', 'Stornieren fehlgeschlagen: ') + (e.message || e))
+  } finally {
+    removeQueryParams(['u'])
+  }
+}
+
+async function handleWaitlistUndoTokenIfPresent() {
+  const url = new URL(window.location.href)
+  const token = url.searchParams.get('wu')
+  if (!token) return
+  try {
+    const res = await fetch(`${apiBase}/waitlist/undo-token/${encodeURIComponent(token)}`, { headers: headers() })
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch (_) { data = null }
+    if (!res.ok) throw new Error(data?.message || text || res.statusText)
+    setMessage(tr('waitlist_undo_success', 'Wartelisten-Eintrag entfernt.'))
+    await loadConfig()
+  } catch (e) {
+    setError(tr('waitlist_undo_failed_prefix', 'Wartelisten-Stornierung fehlgeschlagen: ') + (e.message || e))
+  } finally {
+    removeQueryParams(['wu'])
+  }
+}
+
+function removeQueryParams(keys) {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  keys.forEach(k => url.searchParams.delete(k))
+  const newQuery = url.searchParams.toString()
+  const newUrl = url.pathname + (newQuery ? `?${newQuery}` : '') + url.hash
+  window.history.replaceState({}, '', newUrl)
+}
+
+onMounted(async () => {
+  const url = new URL(window.location.href)
+  let tParam = url.searchParams.get('t')
+  if (!tParam) {
+    const path = url.pathname || ''
+    const hash = url.hash || ''
+    const fromPath = path.startsWith('/t=') ? path.slice(3) : null
+    const fromHash = hash.startsWith('#t=') ? hash.slice(3) : null
+    tParam = fromPath || fromHash || ''
+  }
+  if (tParam) {
+    siteToken.value = tParam
+    publicApiKey.value = tParam
+    localStorage.setItem('site_token', tParam)
+    localStorage.setItem('public_api_key', tParam)
+  }
+  syncCurrentUser()
+  window.addEventListener('api-key-updated', onApiKeyUpdated)
+  await fetchTranslations()
+  await loadConfig()
+  applyCustomCss(config.settings.reservation_custom_css)
+  await verifyTokenIfPresent()
+  await handleUndoTokenIfPresent()
+  await handleWaitlistUndoTokenIfPresent()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('api-key-updated', onApiKeyUpdated)
+  window.dispatchEvent(new CustomEvent('loading-end'))
+  if (customStyleEl.value) {
+    customStyleEl.value.remove()
+    customStyleEl.value = null
+  }
+})
+
+function onApiKeyUpdated(e) {
+  // Admin login updates admin key and user; keep public key untouched
+  if (e?.detail) {
+    // nothing else required here
+  }
+  syncCurrentUser()
+}
+
+function syncCurrentUser() {
+  const storedUser = localStorage.getItem('admin_user')
+  if (storedUser) {
+    try { currentUser.value = JSON.parse(storedUser) } catch (_) { currentUser.value = null }
+  }
+  if (currentUser.value?.role === 'user') {
+    form.name = currentUser.value.name || ''
+    form.email = currentUser.value.email || ''
+  }
+}
+
+watch(() => props.langCode, async (newVal) => {
+  if (newVal && newVal !== lang.value) {
+    lang.value = newVal
+    await fetchTranslations()
+  }
+})
+
+const customStyleEl = ref(null)
+
+function applyCustomCss(css) {
+  if (typeof document === 'undefined') return
+  if (css && css.trim()) {
+    if (!customStyleEl.value) {
+      customStyleEl.value = document.createElement('style')
+      customStyleEl.value.setAttribute('data-reservation-custom-css', '1')
+      document.head.appendChild(customStyleEl.value)
+    }
+    customStyleEl.value.textContent = css
+  } else if (customStyleEl.value) {
+    customStyleEl.value.remove()
+    customStyleEl.value = null
+  }
+}
+
+function goToFaq() {
+  window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'public-faq' }))
+}
+</script>
+
+<template>
+  <div class="page" :style="backgroundStyle">
+    <div class="backdrop">
+      <div v-if="loading" class="loading-overlay" aria-live="polite" aria-busy="true">
+        <img v-if="loadingImageUrl" :src="loadingImageUrl" alt="Loading" class="loader-image" />
+        <div v-else class="loader-spinner" aria-hidden="true"></div>
+      </div>
+      <div v-if="message" class="message">{{ message }}</div>
+      <div v-if="error" class="error">{{ error }}</div>
+
+      <div v-if="(modalMessageEnabled && message) || (modalErrorEnabled && error)" class="modal-backdrop" @click.self="() => { message = ''; error = '' }">
+        <div class="modal">
+          <p class="modal-text">{{ message || error }}</p>
+          <button @click="() => { message = ''; error = '' }">{{ tr('modal_close', 'OK') }}</button>
+        </div>
+      </div>
+
+      <section class="card" :style="cardStyle">
+        <div class="faq-button-row">
+          <button type="button" class="ghost" @click="goToFaq">FAQ</button>
+        </div>
+        <div v-if="config.settings.reservation_top_image" class="top-image">
+          <img
+            :src="mediaUrl(config.settings.reservation_top_image)"
+            :alt="config.settings.reservation_top_image_alt_description || 'Top image'"
+            :style="topImageStyle"
+          />
+        </div>
+        <div class="title-row" :class="['align-' + (headerAlign || 'left')]"><h2 :style="{ textAlign: headerAlign }">{{ config.settings.reservation_name || tr('title_reservation_form', 'Reservierung') }}</h2></div>
+        <p v-if="renderedAdditionalInfo" v-html="renderedAdditionalInfo" :style="{ textAlign: headerAlign }"></p>
+        <p v-if="showNextEvent && nextEventText" class="next-event" :style="{ textAlign: headerAlign }">
+          <strong>{{ tr('next_event_label', 'Nächster Termin') }}:</strong> {{ nextEventText }}
+        </p>
+        <div v-if="showNextEvent && upcomingEvents.length" class="next-event-list" :style="{ textAlign: headerAlign }">
+          <strong>{{ tr('upcoming_events_label', 'Alle voraussichtlichen Termine') }}:</strong>
+          <ul>
+            <li v-for="(evt, idx) in upcomingEvents" :key="idx">{{ evt }}</li>
+          </ul>
+        </div>
+         <p v-if="Number(config.settings.reservation_show_additional_info_link || 0) === 1 && config.settings.reservation_additional_info_link" :style="{ textAlign: headerAlign }">
+          <a :href="config.settings.reservation_additional_info_link" target="_blank" rel="noopener noreferrer" :style="{ display: 'inline-block' }">
+            {{ config.settings.reservation_additional_info_link_text || config.settings.reservation_additional_info_link }}
+          </a>
+         </p>
+        <details v-if="renderedDetails" class="details">
+          <summary :style="{ textAlign: headerAlign }">{{ detailsSummaryLabel }}</summary>
+          <div v-html="renderedDetails" :style="{ textAlign: headerAlign }"></div>
+          <p v-if="Number(config.settings.reservation_show_details_info_link || 0) === 1 && config.settings.reservation_details_info_link" :style="{ textAlign: headerAlign }">
+            <a :href="config.settings.reservation_details_info_link" target="_blank" rel="noopener noreferrer">
+              {{ config.settings.reservation_details_info_link_text || config.settings.reservation_details_info_link }}
+            </a>
+          </p>
+        </details>
+        <form class="form" @submit.prevent="submitReservation">
+          <div v-for="field in publicFields" :key="field.id" class="field">
+            <label :style="{ textAlign: field.text_align || 'left' }">
+              <span v-html="renderFieldLabel(field)"></span>
+            </label>
+            <template v-if="field.type === 'checkbox'">
+              <input type="checkbox" :checked="!!fieldValue(field)" :required="field.required" @change="setFieldValue(field, $event.target.checked)" :style="{ textAlign: field.text_align || 'left' }" />
+            </template>
+            <template v-else>
+              <component
+                :is="fieldInputComponent(field)"
+                :value="fieldValue(field)"
+                @input="setFieldValue(field, $event.target?.value ?? $event)"
+                :required="field.required"
+                :placeholder="field.placeholder"
+                :type="field.type === 'email' ? 'email' : 'text'"
+                :disabled="hideIdentityFields && (field.key === 'name' || field.key === 'email')"
+                :style="{ textAlign: field.text_align || 'left' }"
+              >
+                <option v-for="opt in field.options || []" :key="opt" :value="opt">{{ opt }}</option>
+              </component>
+            </template>
+            <small v-if="field.help_text" v-html="renderFieldHelp(field)" :style="{ textAlign: field.text_align || 'left' }"></small>
+          </div>
+
+          <p v-if="waitlistFullText" class="hint">{{ waitlistFullText }}</p>
+
+          <button
+            type="submit"
+            :disabled="loading || !reservationEnabled"
+            :style="{ backgroundColor: config.settings.reservation_button_color || '#2563eb', borderColor: config.settings.reservation_button_color || '#2563eb' }"
+          >
+            {{ submitLabel }}
+          </button>
+          <button
+            v-if="undoEnabled"
+            type="button"
+            class="ghost"
+            @click="undoReservation"
+            :disabled="loading"
+            :style="{ color: config.settings.reservation_button_color || '#2563eb', borderColor: config.settings.reservation_button_color || '#2563eb' }"
+          >
+            {{ tr('button_remove_reservation', 'Reservierung löschen') }}
+          </button>
+          <p v-if="!reservationEnabled" class="hint">{{ tr('feedback_reservation_disabled', 'Reservierungen sind deaktiviert.') }}</p>
+        </form>
+      </section>
+
+      <section class="card" :style="cardStyle" v-if="showAttendees">
+        <h3 :style="{ textAlign: attendeesAlign }">{{ tr('title_attendees_form', 'Teilnehmer') }}</h3>
+        <ul v-if="config.attendees.length" class="plain-list" :style="{ textAlign: attendeesAlign }">
+          <li v-for="a in config.attendees" :key="a.display_name">{{ a.display_name }}</li>
+        </ul>
+        <p v-else :style="{ textAlign: attendeesAlign }">{{ tr('no_reservation_found', 'Keine Reservierungen vorhanden.') }}</p>
+      </section>
+
+      <section class="card" :style="cardStyle" v-if="waitlistPublicEnabled && waitlistEntries.length">
+        <h3 :style="{ textAlign: waitlistAlign }">{{ tr('waitlist_public_title', 'Warteliste') }}</h3>
+        <ul class="plain-list" :style="{ textAlign: waitlistAlign }">
+          <li v-for="w in waitlistEntries" :key="w.display_name + String(w.date_added || '')">{{ w.display_name }}</li>
+        </ul>
+      </section>
+
+      <section class="card" :style="cardStyle" v-if="showLimit">
+        <p :style="{ textAlign: attendeesAlign }">
+          {{ config.stats.count }} {{ tr('reservation_counter_part1', 'von') }} {{ config.stats.max }} {{ tr('reservation_counter_part2', 'Plätzen belegt') }}
+        </p>
+      </section>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.page { min-height: 100vh; width: 100%; box-sizing: border-box; }
+.backdrop { display: flex; flex-direction: column; gap: 1rem; padding: 0.5rem 1rem 1rem; max-width: 1080px; margin: 0 auto; }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem; box-shadow: 0 4px 14px rgba(15,23,42,0.05); }
+.form { display: flex; flex-direction: column; gap: 0.75rem; }
+label { display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; color: #0f172a; }
+input, select, textarea, button { font: inherit; padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; width: 100%; box-sizing: border-box; }
+button { background: #2563eb; color: #fff; cursor: pointer; width: auto; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+.message { color: #065f46; background: #ecfdf3; border: 1px solid #a7f3d0; padding: 0.5rem; border-radius: 6px; }
+.error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; padding: 0.5rem; border-radius: 6px; }
+.hint { color: #6b7280; }
+.field { border-top: 1px solid #e5e7eb; padding-top: 0.5rem; }
+.details { margin: 0.5rem 0 1rem; }
+.details summary { cursor: pointer; font-weight: 600; }
+.details div { padding-top: 0.5rem; text-align: left; }
+.top-image { text-align: center; margin-bottom: 0.75rem; }
+.top-image img { max-width: 100%; max-height: 240px; object-fit: contain; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+.modal { background: #fff; border-radius: 10px; padding: 1rem; max-width: 420px; width: 100%; box-shadow: 0 20px 50px rgba(15,23,42,0.2); display: flex; flex-direction: column; gap: 0.75rem; }
+.modal-text { margin: 0; font-size: 1rem; }
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+button.ghost { background: #eef2ff; color: #1d4ed8; border-color: #c7d2fe; }
+.faq-button-row { display: flex; justify-content: flex-end; }
+.title-row { display: flex; }
+.title-row.align-left { justify-content: flex-start; }
+.title-row.align-center { justify-content: center; text-align: center; }
+.title-row.align-right { justify-content: flex-end; text-align: right; }
+.next-event { margin: 0.25rem 0; font-weight: 600; color: #0f172a; }
+.next-event-list { margin: 0.25rem 0 0.75rem; }
+.next-event-list ul { margin: 0.25rem 0 0; padding-left: 1.25rem; }
+.plain-list { list-style: none; padding-left: 0; margin: 0; }
+.loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.75); display: flex; align-items: center; justify-content: center; z-index: 60; }
+.loader-image { width: 64px; height: 64px; animation: spin 1s linear infinite; object-fit: contain; }
+.loader-spinner { width: 48px; height: 48px; border: 4px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>
